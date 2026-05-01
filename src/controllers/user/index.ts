@@ -71,7 +71,7 @@ class UserController {
       const userId = req.userId!;
       // 调用纯业务 Service
       const userInfo = await UserService.getProfile(userId);
-      success(res, userInfo, "获取用户信息成功");
+      success(res, { userInfo }, "获取用户信息成功");
     } catch (error: any) {
       fail(res, 400, error.message);
     }
