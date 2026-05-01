@@ -7,8 +7,8 @@ npm-debug.log*
 .env.local
 
 # 数据库文件
-*.db
-*.db-journal
+*.sqlite3
+*.sqlite
 
 # 日志
 logs/
@@ -16,3 +16,6 @@ logs/
 # IDE
 .vscode/
 .idea/
+
+# 接口测试文件
+*.http
