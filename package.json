@@ -5,7 +5,10 @@
   "scripts": {
     "dev": "nodemon --exec tsx src/app.ts",
     "build": "rimraf dist && tsc",
-    "type-check": "tsc --noEmit"
+    "start": "node dist/app.js",
+    "type-check": "tsc --noEmit",
+    "seed": "NODE_ENV=development tsx src/database/seed.ts",
+    "seed:prod": "NODE_ENV=production tsx src/database/seed.ts"
   },
   "keywords": [],
   "author": "",

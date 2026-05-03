@@ -8,7 +8,6 @@
 // - 用户信息更新
 // - 用户密码加密与验证
 
-import { db } from "../../database";
 import { generateTokens, verifyToken } from "../../utils/jwt";
 import bcrypt from "bcryptjs";
 import {

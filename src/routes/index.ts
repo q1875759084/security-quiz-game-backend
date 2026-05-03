@@ -1,10 +1,12 @@
 import { Router, Request, Response } from 'express';
 import userRouter from './user/index';
+import scriptsRouter from './scripts/index';
 
 const router = Router();
 
 // 注册所有路由模块
 router.use('/user', userRouter);
+router.use('/scripts', scriptsRouter);
 
 // 兜底路由 - 处理未匹配的路径
 router.use((req: Request, res: Response) => {
