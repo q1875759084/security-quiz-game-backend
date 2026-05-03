@@ -7,14 +7,14 @@ import cors from "cors"; // 新增, 跨域中间件
 // TODO: 导入错误处理中间件
 // import { errorHandler } from "./src/middleware/errorHandler";
 
-initUserTable();initUserTable();
+initUserTable();
 
 const app = express();
-const port = 3000;
+const port = Number(process.env.PORT) || 3000;
 
 // 配置跨域
 app.use(cors({
-  origin: 'http://localhost:3001', // 前端地址
+  origin: process.env.CORS_ORIGIN || 'http://localhost:3001',
   credentials: true, // 允许携带 Cookie
   allowedHeaders: ['Content-Type', 'Authorization'],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
