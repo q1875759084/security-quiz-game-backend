@@ -41,7 +41,9 @@ function cleanXSS<T>(data: T): T {
 
 const xssMiddleware = (req: Request, res: Response, next: NextFunction): void => {
   req.body = cleanXSS(req.body);
-  req.query = cleanXSS(req.query);
+  // Express 5 中 req.query 是只读 getter，不能直接赋值
+  // 用 Object.assign 原地修改属性值，避免替换整个引用
+  Object.assign(req.query, cleanXSS(req.query));
   req.params = cleanXSS(req.params);
   next();
 };
