@@ -1,5 +1,18 @@
 import { db } from '../index';
 
+export interface UserRow {
+  id: number;
+  username: string;
+  email: string | null;
+  phone: string | null;
+  password_hash: string;
+  nickname: string | null;
+  avatar: string | null;
+  status: number;
+  created_at: string;
+  updated_at: string;
+}
+
 // 1. 初始化 users 表（仅 user 相关）
 export function initUserTable() {
   db.prepare(`
@@ -24,7 +37,7 @@ export function findUserByAccount(account: string) {
   return db.prepare(`
     SELECT * FROM users 
     WHERE username = ? OR email = ? OR phone = ?
-  `).get(account, account, account);
+  `).get(account, account, account) as UserRow | undefined;
 }
 
 // 3. 根据ID查询用户（获取信息专用）
@@ -32,7 +45,7 @@ export function findUserById(userId: number) {
   return db.prepare(`
     SELECT id, username, email, phone, nickname, avatar, created_at
     FROM users WHERE id = ?
-  `).get(userId);
+  `).get(userId) as UserRow | undefined;
 }
 
 // 4. 创建用户（注册专用）
@@ -58,5 +71,5 @@ export function checkUserExists(field: string, value: string) {
  * 根据字段查询用户
  */
 export function getUserByField(field: string | number, value: string | number) {
-  return db.prepare(`SELECT * FROM users WHERE ${field} = ?`).get(value);
+  return db.prepare(`SELECT * FROM users WHERE ${field} = ?`).get(value) as UserRow | undefined;
 }
