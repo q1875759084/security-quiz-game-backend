@@ -1,6 +1,7 @@
 import express, { Request, Response } from "express";
 import {initUserTable} from "./database/user";
 import { initScriptsTable, initScriptNodesTable } from "./database/scripts";
+import { initRecordsTable } from "./database/records";
 import routes from "./routes/index";
 import xssMiddleware from "./middleware/xssMiddleware";
 import cookieParser from "cookie-parser";
@@ -11,6 +12,7 @@ import cors from "cors"; // 新增, 跨域中间件
 initUserTable();
 initScriptsTable();
 initScriptNodesTable();
+initRecordsTable();
 
 const app = express();
 const port = Number(process.env.PORT) || 3000;
