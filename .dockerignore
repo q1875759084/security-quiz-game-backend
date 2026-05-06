@@ -1,0 +1,22 @@
+# 依赖目录（镜像内重新安装）
+node_modules/
+
+# 编译产物（builder 阶段重新生成）
+dist/
+
+# 数据库文件（通过 Volume 挂载，不能打进镜像）
+# 打进镜像的数据库是静态的，无法被 Volume 覆盖写入
+database/
+*.sqlite3
+
+# 开发环境配置
+.env
+.env.*
+
+# 版本控制
+.git/
+.gitignore
+
+# 编辑器
+.vscode/
+.idea/

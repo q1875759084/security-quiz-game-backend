@@ -1,24 +1,16 @@
 /**
- * 数据库 Seed 脚本
- * 用途：插入开发环境初始数据
- * 执行：npm run seed
- * 注意：仅允许在 development 环境运行，生产环境会直接退出
+ * 数据库 Seed 模块
+ *
+ * 两种使用方式：
+ *   1. 应用启动时自动调用 seedDatabase()，保证容器自包含（生产 + 开发均可）
+ *   2. 手动执行：npm run seed（本地快速重置数据，执行完自动退出）
+ *
+ * 幂等性保证：所有 INSERT 使用 INSERT OR IGNORE，重复执行不会产生副作用
  */
 
 import path from 'path';
 import fs from 'fs';
 import { db } from './index';
-import { initScriptsTable, initScriptNodesTable } from './scripts';
-
-// 环境保护：非开发环境禁止执行
-if (process.env.NODE_ENV === 'production') {
-  console.error('❌ Seed 脚本不允许在生产环境运行');
-  process.exit(1);
-}
-
-// 确保表已存在
-initScriptsTable();
-initScriptNodesTable();
 
 // ─── 初始剧本数据 ─────────────────────────────────────────────────────────────
 const SEED_SCRIPTS = [
@@ -54,24 +46,7 @@ const SEED_SCRIPTS = [
   },
 ];
 
-// INSERT OR IGNORE：主键已存在时跳过，保证幂等性
-const insert = db.prepare(`
-  INSERT OR IGNORE INTO scripts (id, title, description, cover_color, tags, chapter_count, entry_node_id, status)
-  VALUES (@id, @title, @description, @cover_color, @tags, @chapter_count, @entry_node_id, @status)
-`);
-
-// 使用事务批量插入，保证原子性
-const insertMany = db.transaction((scripts: typeof SEED_SCRIPTS) => {
-  for (const script of scripts) {
-    insert.run(script);
-  }
-});
-
-insertMany(SEED_SCRIPTS);
-console.log(`✅ scripts Seed 完成，共处理 ${SEED_SCRIPTS.length} 条剧本数据`);
-
-// ─── 剧本节点数据 ─────────────────────────────────────────────────────────────
-// 映射：剧本 ID → 对应的节点 JSON 文件路径
+// 剧本 ID → 节点 JSON 文件路径映射
 const NODE_FILES: { scriptId: string; filePath: string }[] = [
   {
     scriptId: 'capture1',
@@ -87,30 +62,61 @@ interface NodeJson {
   choices: unknown[];
 }
 
-const insertNode = db.prepare(`
-  INSERT OR IGNORE INTO script_nodes (id, script_id, title, content, type, choices)
-  VALUES (@id, @script_id, @title, @content, @type, @choices)
-`);
+/**
+ * 初始化种子数据，幂等，可在应用启动时安全调用
+ */
+export function seedDatabase(): void {
+  // ─── 剧本数据 ───────────────────────────────────────────────────────────────
+  const insertScript = db.prepare(`
+    INSERT OR IGNORE INTO scripts (id, title, description, cover_color, tags, chapter_count, entry_node_id, status)
+    VALUES (@id, @title, @description, @cover_color, @tags, @chapter_count, @entry_node_id, @status)
+  `);
 
-const insertNodes = db.transaction((scriptId: string, nodes: NodeJson[]) => {
-  for (const node of nodes) {
-    insertNode.run({
-      id: node.id,
-      script_id: scriptId,
-      title: node.title,
-      content: node.content,
-      type: node.type,
-      choices: JSON.stringify(node.choices), // 数组序列化为 JSON 字符串存储
-    });
-  }
-});
+  // 使用事务批量插入，保证原子性：全部成功或全部回滚
+  const insertScripts = db.transaction((scripts: typeof SEED_SCRIPTS) => {
+    for (const script of scripts) {
+      insertScript.run(script);
+    }
+  });
 
-for (const { scriptId, filePath } of NODE_FILES) {
-  if (!fs.existsSync(filePath)) {
-    console.warn(`⚠️  节点文件不存在，跳过: ${filePath}`);
-    continue;
+  insertScripts(SEED_SCRIPTS);
+  console.log(`✅ scripts Seed 完成，共处理 ${SEED_SCRIPTS.length} 条剧本数据`);
+
+  // ─── 剧本节点数据 ────────────────────────────────────────────────────────────
+  const insertNode = db.prepare(`
+    INSERT OR IGNORE INTO script_nodes (id, script_id, title, content, type, choices)
+    VALUES (@id, @script_id, @title, @content, @type, @choices)
+  `);
+
+  const insertNodes = db.transaction((scriptId: string, nodes: NodeJson[]) => {
+    for (const node of nodes) {
+      insertNode.run({
+        id: node.id,
+        script_id: scriptId,
+        title: node.title,
+        content: node.content,
+        type: node.type,
+        choices: JSON.stringify(node.choices), // 数组序列化为 JSON 字符串存储
+      });
+    }
+  });
+
+  for (const { scriptId, filePath } of NODE_FILES) {
+    if (!fs.existsSync(filePath)) {
+      console.warn(`⚠️  节点文件不存在，跳过: ${filePath}`);
+      continue;
+    }
+    const nodes: NodeJson[] = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    insertNodes(scriptId, nodes);
+    console.log(`✅ script_nodes Seed 完成：${scriptId}，共 ${nodes.length} 个节点`);
   }
-  const nodes: NodeJson[] = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-  insertNodes(scriptId, nodes);
-  console.log(`✅ script_nodes Seed 完成：${scriptId}，共 ${nodes.length} 个节点`);
+}
+
+// ─── 手动执行入口（npm run seed）────────────────────────────────────────────
+// 仅当直接运行此文件时执行（而非被 import 时）
+// 用途：本地开发时快速重置测试数据
+//
+// tsx 以 CJS 模式执行 .ts 文件，require.main 可用
+if (require.main === module) {
+  seedDatabase();
 }

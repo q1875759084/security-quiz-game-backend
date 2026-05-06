@@ -2,17 +2,21 @@ import express, { Request, Response } from "express";
 import {initUserTable} from "./database/user";
 import { initScriptsTable, initScriptNodesTable } from "./database/scripts";
 import { initRecordsTable } from "./database/records";
+import { seedDatabase } from "./database/seed";
 import routes from "./routes/index";
 import xssMiddleware from "./middleware/xssMiddleware";
 import cookieParser from "cookie-parser";
-import cors from "cors"; // 新增, 跨域中间件
+import cors from "cors";
 // TODO: 导入错误处理中间件
 // import { errorHandler } from "./src/middleware/errorHandler";
 
+// ─── 数据库初始化（启动时自动执行，幂等）────────────────────────────────────
+// 顺序：建表 → seed 数据，seed 依赖表已存在
 initUserTable();
 initScriptsTable();
 initScriptNodesTable();
 initRecordsTable();
+seedDatabase();
 
 const app = express();
 const port = Number(process.env.PORT) || 3000;
