@@ -1,5 +1,7 @@
 name: CI/CD 自动部署
 
+# 镜像管理策略（同前端）：
+#   一次构建原则：测试用 sha tag，生产给同一个 sha 镜像追加语义版本 tag
 on:
   push:
     branches:
@@ -9,7 +11,9 @@ on:
   workflow_dispatch:
 
 jobs:
+  # ==================== CI：代码校验 ====================
   ci:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
 
     steps:
@@ -30,6 +34,7 @@ jobs:
       - name: 构建校验
         run: npm run build
 
+  # ==================== CD：测试环境部署 ====================
   deploy-dev:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
@@ -38,52 +43,24 @@ jobs:
       - name: Checkout 代码
         uses: actions/checkout@v4
 
-      - name: 生成镜像标签
-        id: meta
-        run: echo "IMAGE_TAG=${{ github.sha }}" >> $GITHUB_OUTPUT
-
-      - name: 构建 Docker 镜像
-        run: docker build -t security-quiz-game-backend:${{ steps.meta.outputs.IMAGE_TAG }} .
-
-      - name: 登录 Docker Hub
-        run: echo "${{ secrets.DOCKER_HUB_TOKEN }}" | docker login -u "${{ secrets.DOCKER_HUB_USERNAME }}" --password-stdin
-
-      - name: 推送镜像到 Docker Hub
-        run: |
-          docker tag security-quiz-game-backend:${{ steps.meta.outputs.IMAGE_TAG }} ${{ secrets.DOCKER_HUB_USERNAME }}/security-quiz-game-backend:${{ steps.meta.outputs.IMAGE_TAG }}
-          docker push ${{ secrets.DOCKER_HUB_USERNAME }}/security-quiz-game-backend:${{ steps.meta.outputs.IMAGE_TAG }}
-
-      # compose 文件由前端仓库管理，后端部署时假设服务器上已存在（前端先部署）
-      # 只更新 backend 服务，frontend 服务不受影响（up -d backend 只重启后端容器）
-      - name: 部署到测试环境
-        uses: appleboy/ssh-action@v1.0.3
+      # CI 校验（workflow_dispatch 不触发 ci job，在此补充）
+      - name: 设置 Node 版本
+        uses: actions/setup-node@v4
         with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
-          script_stop: true
-          script: |
-            docker pull ${{ secrets.DOCKER_HUB_USERNAME }}/security-quiz-game-backend:${{ steps.meta.outputs.IMAGE_TAG }}
-            DOCKER_HUB_USERNAME=${{ secrets.DOCKER_HUB_USERNAME }} \
-            BACKEND_TAG=${{ steps.meta.outputs.IMAGE_TAG }} \
-            CORS_ORIGIN=${{ secrets.CORS_ORIGIN }} \
-            JWT_SECRET=${{ secrets.JWT_SECRET }} \
-            docker compose -f ~/docker-compose.yml -f ~/docker-compose.dev.yml up -d backend
+          node-version: '20'
 
-  deploy-prod:
-    needs: ci
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
+      - name: 安装依赖
+        run: npm install
 
-    steps:
-      - name: Checkout 代码
-        uses: actions/checkout@v4
+      - name: 类型检查
+        run: npm run type-check
+
+      - name: 构建校验
+        run: npm run build
 
       - name: 生成镜像标签
         id: meta
-        run: |
-          echo "VERSION_TAG=${{ github.ref_name }}" >> $GITHUB_OUTPUT
-          echo "SHA_TAG=${{ github.sha }}" >> $GITHUB_OUTPUT
+        run: echo "SHA_TAG=${{ github.sha }}" >> $GITHUB_OUTPUT
 
       - name: 构建 Docker 镜像
         run: docker build -t security-quiz-game-backend:${{ steps.meta.outputs.SHA_TAG }} .
@@ -91,26 +68,53 @@ jobs:
       - name: 登录 Docker Hub
         run: echo "${{ secrets.DOCKER_HUB_TOKEN }}" | docker login -u "${{ secrets.DOCKER_HUB_USERNAME }}" --password-stdin
 
-      - name: 推送镜像到 Docker Hub
+      - name: 推送镜像到 Docker Hub（sha tag）
         run: |
-          docker tag security-quiz-game-backend:${{ steps.meta.outputs.SHA_TAG }} ${{ secrets.DOCKER_HUB_USERNAME }}/security-quiz-game-backend:${{ steps.meta.outputs.VERSION_TAG }}
           docker tag security-quiz-game-backend:${{ steps.meta.outputs.SHA_TAG }} ${{ secrets.DOCKER_HUB_USERNAME }}/security-quiz-game-backend:${{ steps.meta.outputs.SHA_TAG }}
-          docker tag security-quiz-game-backend:${{ steps.meta.outputs.SHA_TAG }} ${{ secrets.DOCKER_HUB_USERNAME }}/security-quiz-game-backend:latest
-          docker push ${{ secrets.DOCKER_HUB_USERNAME }}/security-quiz-game-backend:${{ steps.meta.outputs.VERSION_TAG }}
           docker push ${{ secrets.DOCKER_HUB_USERNAME }}/security-quiz-game-backend:${{ steps.meta.outputs.SHA_TAG }}
-          docker push ${{ secrets.DOCKER_HUB_USERNAME }}/security-quiz-game-backend:latest
 
-      - name: 部署到生产环境
-        uses: appleboy/ssh-action@v1.0.3
+      - name: 触发 infra 仓库部署后端（测试环境）
+        uses: peter-evans/repository-dispatch@v3
         with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
-          script_stop: true
-          script: |
-            docker pull ${{ secrets.DOCKER_HUB_USERNAME }}/security-quiz-game-backend:${{ steps.meta.outputs.VERSION_TAG }}
-            DOCKER_HUB_USERNAME=${{ secrets.DOCKER_HUB_USERNAME }} \
-            BACKEND_TAG=${{ steps.meta.outputs.VERSION_TAG }} \
-            CORS_ORIGIN=${{ secrets.CORS_ORIGIN }} \
-            JWT_SECRET=${{ secrets.JWT_SECRET }} \
-            docker compose -f ~/docker-compose.yml -f ~/docker-compose.prod.yml up -d backend
+          token: ${{ secrets.INFRA_DEPLOY_TOKEN }}
+          repository: ${{ github.repository_owner }}/infra
+          event-type: deploy-backend
+          client-payload: |
+            {
+              "image_tag": "${{ steps.meta.outputs.SHA_TAG }}",
+              "environment": "dev"
+            }
+
+  # ==================== CD：生产环境部署 ====================
+  deploy-prod:
+    needs: ci
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 生成镜像标签
+        id: meta
+        run: |
+          echo "VERSION_TAG=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          echo "SHA_TAG=${{ github.sha }}" >> $GITHUB_OUTPUT
+
+      - name: 登录 Docker Hub
+        run: echo "${{ secrets.DOCKER_HUB_TOKEN }}" | docker login -u "${{ secrets.DOCKER_HUB_USERNAME }}" --password-stdin
+
+      - name: 给 sha 镜像追加语义版本 tag
+        run: |
+          docker buildx imagetools create \
+            --tag ${{ secrets.DOCKER_HUB_USERNAME }}/security-quiz-game-backend:${{ steps.meta.outputs.VERSION_TAG }} \
+            ${{ secrets.DOCKER_HUB_USERNAME }}/security-quiz-game-backend:${{ steps.meta.outputs.SHA_TAG }}
+
+      - name: 触发 infra 仓库部署后端（生产环境）
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.INFRA_DEPLOY_TOKEN }}
+          repository: ${{ github.repository_owner }}/infra
+          event-type: deploy-backend
+          client-payload: |
+            {
+              "image_tag": "${{ steps.meta.outputs.VERSION_TAG }}",
+              "environment": "prod"
+            }
