@@ -1,14 +1,30 @@
 name: CI/CD 自动部署
 
-# 镜像管理策略（同前端）：
-#   一次构建原则：测试用 sha tag，生产给同一个 sha 镜像追加语义版本 tag
+# ============================================================
+# 触发条件设计（Promotion-based Deployment 晋级式部署）
+# 与前端仓库设计完全一致，详见前端仓库注释
+#
+# push 分支         → 只触发 CI
+# workflow_dispatch → event=deploy-dev  部署测试环境
+#                     event=deploy-prod 部署生产环境（需填 tag）
+# ============================================================
 on:
   push:
     branches:
       - '**'
-    tags:
-      - 'v*.*.*'
   workflow_dispatch:
+    inputs:
+      event:
+        description: '选择操作类型'
+        required: true
+        type: choice
+        options:
+          - deploy-dev
+          - deploy-prod
+      tag:
+        description: '生产部署时填写，对应测试验证过的 tag，如 v1.0.0'
+        required: false
+        default: ''
 
 jobs:
   # ==================== CI：代码校验 ====================
@@ -36,14 +52,13 @@ jobs:
 
   # ==================== CD：测试环境部署 ====================
   deploy-dev:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && inputs.event == 'deploy-dev'
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout 代码
         uses: actions/checkout@v4
 
-      # CI 校验（workflow_dispatch 不触发 ci job，在此补充）
       - name: 设置 Node 版本
         uses: actions/setup-node@v4
         with:
@@ -58,7 +73,7 @@ jobs:
       - name: 构建校验
         run: npm run build
 
-      - name: 生成镜像标签
+      - name: 生成 sha 镜像标签
         id: meta
         run: echo "SHA_TAG=${{ github.sha }}" >> $GITHUB_OUTPUT
 
@@ -68,7 +83,7 @@ jobs:
       - name: 登录 Docker Hub
         run: echo "${{ secrets.DOCKER_HUB_TOKEN }}" | docker login -u "${{ secrets.DOCKER_HUB_USERNAME }}" --password-stdin
 
-      - name: 推送镜像到 Docker Hub（sha tag）
+      - name: 推送镜像（sha tag）
         run: |
           docker tag security-quiz-game-backend:${{ steps.meta.outputs.SHA_TAG }} ${{ secrets.DOCKER_HUB_USERNAME }}/security-quiz-game-backend:${{ steps.meta.outputs.SHA_TAG }}
           docker push ${{ secrets.DOCKER_HUB_USERNAME }}/security-quiz-game-backend:${{ steps.meta.outputs.SHA_TAG }}
@@ -86,16 +101,28 @@ jobs:
             }
 
   # ==================== CD：生产环境部署 ====================
+  # 一次构建原则：不重新构建，给 sha 镜像追加语义版本 tag
   deploy-prod:
-    needs: ci
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'workflow_dispatch' && inputs.event == 'deploy-prod'
     runs-on: ubuntu-latest
 
     steps:
+      - name: 校验 tag 参数不能为空
+        run: |
+          if [ -z "${{ inputs.tag }}" ]; then
+            echo "❌ 生产部署必须填写 tag 参数，如 v1.0.0"
+            exit 1
+          fi
+
+      - name: Checkout 代码（用于获取 tag 对应的 sha）
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+
       - name: 生成镜像标签
         id: meta
         run: |
-          echo "VERSION_TAG=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          echo "VERSION_TAG=${{ inputs.tag }}" >> $GITHUB_OUTPUT
           echo "SHA_TAG=${{ github.sha }}" >> $GITHUB_OUTPUT
 
       - name: 登录 Docker Hub
