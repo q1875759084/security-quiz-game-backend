@@ -4,9 +4,9 @@ name: CI/CD 自动部署
 # 触发条件设计（Promotion-based Deployment 晋级式部署）
 # 与前端仓库设计完全一致，详见前端仓库注释
 #
-# push 分支         → 只触发 CI
-# workflow_dispatch → event=deploy-dev  部署测试环境
-#                     event=deploy-prod 部署生产环境（需填 tag）
+# CI 复用设计：
+#   ci job 同时监听 push 和 workflow_dispatch
+#   deploy-dev / deploy-prod 都通过 needs: ci 强制依赖，消除重复 CI steps
 # ============================================================
 on:
   push:
@@ -29,7 +29,7 @@ on:
 jobs:
   # ==================== CI：代码校验 ====================
   ci:
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
 
     steps:
@@ -52,26 +52,13 @@ jobs:
 
   # ==================== CD：测试环境部署 ====================
   deploy-dev:
+    needs: ci
     if: github.event_name == 'workflow_dispatch' && inputs.event == 'deploy-dev'
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout 代码
         uses: actions/checkout@v4
-
-      - name: 设置 Node 版本
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: 安装依赖
-        run: npm install
-
-      - name: 类型检查
-        run: npm run type-check
-
-      - name: 构建校验
-        run: npm run build
 
       - name: 生成 sha 镜像标签
         id: meta
@@ -103,6 +90,7 @@ jobs:
   # ==================== CD：生产环境部署 ====================
   # 一次构建原则：不重新构建，给 sha 镜像追加语义版本 tag
   deploy-prod:
+    needs: ci
     if: github.event_name == 'workflow_dispatch' && inputs.event == 'deploy-prod'
     runs-on: ubuntu-latest
 
