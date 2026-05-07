@@ -1,8 +1,10 @@
 import jwt from 'jsonwebtoken';
 
-// 密钥（真实项目放到 .env 环境变量）
-// 【密钥建议放到环境变量，这里先写死演示】
-const SECRET = 'YOUR_QUIZ_GAME_SECRET'; 
+// 密钥从环境变量读取，未配置时拒绝启动（Fail Fast）
+const SECRET = process.env.JWT_SECRET;
+if (!SECRET) {
+  throw new Error('JWT_SECRET 环境变量未配置，应用拒绝启动');
+}
 const ACCESS_EXPIRES = '1h';   // 短有效期：访问令牌
 const REFRESH_EXPIRES = '7d'; // 长有效期：刷新令牌
 

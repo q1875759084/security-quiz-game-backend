@@ -1,3 +1,4 @@
+import 'dotenv/config'; // 本地开发：从 .env 文件加载环境变量；生产环境变量由 compose 注入，此行无副作用
 import express, { Request, Response } from "express";
 import {initUserTable} from "./database/user";
 import { initScriptsTable, initScriptNodesTable } from "./database/scripts";
@@ -21,9 +22,13 @@ seedDatabase();
 const app = express();
 const port = Number(process.env.PORT) || 3000;
 
-// 配置跨域
+// 配置跨域，CORS_ORIGIN 必须通过环境变量注入，未配置时拒绝启动（Fail Fast）
+const corsOrigin = process.env.CORS_ORIGIN;
+if (!corsOrigin) {
+  throw new Error('CORS_ORIGIN 环境变量未配置，应用拒绝启动');
+}
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:3001',
+  origin: corsOrigin,
   credentials: true, // 允许携带 Cookie
   allowedHeaders: ['Content-Type', 'Authorization'],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
