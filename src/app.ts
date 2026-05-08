@@ -22,13 +22,15 @@ seedDatabase();
 const app = express();
 const port = Number(process.env.PORT) || 3000;
 
-// 配置跨域，CORS_ORIGIN 必须通过环境变量注入，未配置时拒绝启动（Fail Fast）
-const corsOrigin = process.env.CORS_ORIGIN;
-if (!corsOrigin) {
-  throw new Error('CORS_ORIGIN 环境变量未配置，应用拒绝启动');
-}
+// 配置跨域白名单，支持多域名，逗号分隔：如 "https://a.com,https://b.com"
+// 未配置时默认空列表，跨域请求全拒（安全默认值）
+// 同域部署（nginx 反代 /api/*）时浏览器不触发 CORS，空列表不影响功能
+// 增加白名单只需修改 Secrets 并重新触发部署，无需改代码或重新构建镜像
+const corsOrigins = process.env.CORS_ORIGIN
+  ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
+  : [];
 app.use(cors({
-  origin: corsOrigin,
+  origin: corsOrigins,
   credentials: true, // 允许携带 Cookie
   allowedHeaders: ['Content-Type', 'Authorization'],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
