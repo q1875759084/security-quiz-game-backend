@@ -30,8 +30,10 @@ RUN npm install --omit=dev
 # 从构建阶段复制编译产物
 COPY --from=builder /app/dist ./dist
 
-# 复制剧本数据文件（seed 脚本运行时需要读取）
-COPY src/data ./src/data
+# 复制剧本数据文件到 dist/data
+# seed.ts 编译后路径为 dist/database/seed.js，__dirname = /app/dist/database
+# path.resolve(__dirname, '../data/chapter1.json') = /app/dist/data/chapter1.json
+COPY src/data ./dist/data
 
 # 数据库文件存放目录，通过 Docker Volume 挂载实现持久化
 # 容器内路径：/app/database/database.sqlite3
